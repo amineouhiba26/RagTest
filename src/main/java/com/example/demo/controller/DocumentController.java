@@ -23,5 +23,16 @@ public class DocumentController {
             return "Error ingesting to vector database: " + e.getMessage();
         }
     }
+    @PostMapping("/vector/upload")
+    public String ingestAnyFileToVector(@RequestParam String fileName) {
+        try {
+            String filePath = System.getProperty("user.dir") + fileName;
+
+            vectorIngestionService.ingestPdfToVectorStore(filePath);
+            return " PDF successfully ingested to vector database for precise RAG!";
+        } catch (Exception e) {
+            return "Error ingesting to vector database: " + e.getMessage();
+        }
+    }
 
 }
