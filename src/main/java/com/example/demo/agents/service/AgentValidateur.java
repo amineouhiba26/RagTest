@@ -23,62 +23,96 @@ public class AgentValidateur {
     public boolean validerConformite(DemandeTraitement demande) {
         try {
             logger.info(() -> "Agent Validateur: Vérification de conformité pour la demande " + demande.getId());
+            demande.addAuditLog("Agent Validateur: Début de validation");
 
             // Recherche des conditions de la police via RAG
             String questionPolice = String.format(
                 "Quelles sont les conditions de couverture pour un sinistre de type %s? " +
-                "Quels sont les exclusions et les franchises applicables?",
+                "Quels sont les exclusions, franchises et plafonds applicables?",
                 demande.getTypeSinistre().getDescription()
             );
 
             String conditionsPolice = ragService.askQuestion(questionPolice);
+            demande.addAuditLog("Conditions contractuelles récupérées via RAG");
 
-            // Analyse de conformité avec l'IA
+            // Analyse détaillée de conformité avec scoring
             String prompt = """
                 En tant qu'agent validateur d'assurance, vérifiez la conformité de cette demande:
                 
                 Type de sinistre: %s
                 Contenu de la demande: "%s"
+                Métadonnées: %s
+                Anomalies détectées: %s
                 
                 Conditions de la police d'assurance:
                 %s
                 
-                Analysez si:
-                1. Le type de sinistre est couvert par la police
-                2. Les circonstances décrites respectent les conditions
-                3. Aucune exclusion ne s'applique
-                4. Les délais de déclaration sont respectés (si applicable)
-                5. Les informations fournies sont suffisantes
+                Analysez et notez chaque critère sur 20 points:
+                1. Couverture du type de sinistre (0-20 points)
+                2. Respect des conditions contractuelles (0-20 points)
+                3. Absence d'exclusions applicables (0-20 points)
+                4. Respect des délais de déclaration (0-20 points)
+                5. Suffisance des informations fournies (0-20 points)
                 
-                Répondez par:
-                - CONFORME si la demande respecte toutes les conditions
-                - NON_CONFORME si une ou plusieurs conditions ne sont pas respectées
+                Pour chaque critère, indiquez:
+                - Le score
+                - Une justification courte
                 
-                Puis expliquez brièvement la raison de votre décision.
-                Format: [CONFORME/NON_CONFORME] - Explication
+                Puis calculez le score total sur 100.
+                
+                Format de réponse:
+                CRITERE_1: [score]/20 - [justification]
+                CRITERE_2: [score]/20 - [justification]
+                CRITERE_3: [score]/20 - [justification]
+                CRITERE_4: [score]/20 - [justification]
+                CRITERE_5: [score]/20 - [justification]
+                SCORE_TOTAL: [total]/100
+                DECISION: [CONFORME/NON_CONFORME/DOUTEUX]
+                RAISON: [explication de la décision]
                 """.formatted(
                     demande.getTypeSinistre().getDescription(),
                     demande.getContenuDemande(),
+                    demande.getMetadata().toString(),
+                    demande.getAnomaliesDetectees().isEmpty() ? "Aucune" : demande.getAnomaliesDetectees().toString(),
                     conditionsPolice
                 );
 
             String reponse = chatModel.generate(prompt);
             
-            // Parse de la réponse
-            boolean conforme = reponse.toUpperCase().startsWith("CONFORME");
-            String explication = reponse.contains(" - ") ? 
-                reponse.substring(reponse.indexOf(" - ") + 3) : reponse;
+            // Parse de la réponse et extraction du score
+            double score = extraireScore(reponse);
+            String decision = extraireDecision(reponse);
+            String explication = extraireRaison(reponse);
 
-            demande.setConformite(conforme);
-            if (!conforme) {
-                demande.setRaisonNonConformite(explication);
-                demande.setStatut(DemandeTraitement.StatutTraitement.REJETE);
+            demande.setScoreConformite(score);
+            demande.addMetadata("rapport_validation", reponse);
+            demande.addAuditLog(String.format("Score conformité: %.2f/100", score));
+
+            // Décision basée sur le score et la décision de l'IA
+            boolean conforme;
+            if (decision.contains("DOUTEUX") || score < 70) {
+                // Cas douteux : validation humaine requise
+                demande.setNecessiteValidationHumaine(true);
+                demande.setRaisonValidationHumaine("Score de conformité faible ou cas complexe");
+                demande.setStatut(DemandeTraitement.StatutTraitement.EN_ATTENTE_VALIDATION_HUMAINE);
+                conforme = false;
+                demande.addAuditLog("Validation humaine requise - cas complexe");
             } else {
-                demande.setStatut(DemandeTraitement.StatutTraitement.VALIDE);
+                conforme = decision.contains("CONFORME") && score >= 70;
             }
 
-            logger.info(() -> String.format("Résultat validation: %s - %s", 
-                conforme ? "CONFORME" : "NON_CONFORME", explication));
+            demande.setConformite(conforme);
+            if (!conforme && !demande.isNecessiteValidationHumaine()) {
+                demande.setRaisonNonConformite(explication);
+                demande.setStatut(DemandeTraitement.StatutTraitement.REJETE);
+                demande.addAuditLog("Demande rejetée: " + explication);
+            } else if (conforme) {
+                demande.setStatut(DemandeTraitement.StatutTraitement.VALIDE);
+                demande.addAuditLog("Demande validée");
+            }
+
+            logger.info(() -> String.format("Résultat validation: %s (score: %.2f/100) - %s",
+                conforme ? "CONFORME" : "NON_CONFORME", score, explication));
 
             return conforme;
 
@@ -87,8 +121,51 @@ public class AgentValidateur {
             demande.setConformite(false);
             demande.setRaisonNonConformite("Erreur technique lors de la validation: " + e.getMessage());
             demande.setStatut(DemandeTraitement.StatutTraitement.REJETE);
+            demande.addAuditLog("Erreur validation: " + e.getMessage());
             return false;
         }
+    }
+
+    private double extraireScore(String reponse) {
+        try {
+            // Recherche de "SCORE_TOTAL: XX/100"
+            String[] lines = reponse.split("\n");
+            for (String line : lines) {
+                if (line.toUpperCase().contains("SCORE_TOTAL")) {
+                    String[] parts = line.split(":");
+                    if (parts.length > 1) {
+                        String scoreStr = parts[1].trim().split("/")[0].trim();
+                        return Double.parseDouble(scoreStr);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.warning("Impossible d'extraire le score: " + e.getMessage());
+        }
+        return 50.0; // Score par défaut moyen
+    }
+
+    private String extraireDecision(String reponse) {
+        String[] lines = reponse.split("\n");
+        for (String line : lines) {
+            if (line.toUpperCase().contains("DECISION")) {
+                return line.toUpperCase();
+            }
+        }
+        return "DOUTEUX";
+    }
+
+    private String extraireRaison(String reponse) {
+        String[] lines = reponse.split("\n");
+        for (String line : lines) {
+            if (line.toUpperCase().contains("RAISON")) {
+                String[] parts = line.split(":", 2);
+                if (parts.length > 1) {
+                    return parts[1].trim();
+                }
+            }
+        }
+        return "Analyse complète disponible dans les métadonnées";
     }
 
     public String genererRapportValidation(DemandeTraitement demande) {

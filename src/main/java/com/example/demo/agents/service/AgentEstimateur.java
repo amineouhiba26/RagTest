@@ -107,6 +107,29 @@ public class AgentEstimateur {
         return analyse.toString();
     }
 
+    private double extraireMontantMoyen(String reponse) {
+        try {
+            // Recherche du montant moyen
+            String[] lignes = reponse.split("\n");
+            for (String ligne : lignes) {
+                if (ligne.toUpperCase().contains("MOYENNE")) {
+                    String montantStr = ligne.split(":")[1].trim()
+                        .replaceAll("[^0-9.,]", "")
+                        .replace(",", ".");
+
+                    if (!montantStr.isEmpty()) {
+                        return Double.parseDouble(montantStr);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.warning("Impossible de parser le montant moyen, tentative avec ancien format: " + e.getMessage());
+        }
+
+        // Fallback sur l'ancien format
+        return extraireMontant(reponse);
+    }
+
     private double extraireMontant(String reponse) {
         try {
             // Recherche du montant avant le premier "|"

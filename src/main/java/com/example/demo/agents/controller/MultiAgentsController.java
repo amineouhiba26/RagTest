@@ -52,20 +52,26 @@ public class MultiAgentsController {
             // Traitement par les agents
             return orchestrateur.traiterDemandeComplete(demande)
                 .thenApply(demandeTraitee -> {
-                    Map<String, Object> response = Map.of(
-                        "success", true,
-                        "demandeId", demandeTraitee.getId(),
-                        "statut", demandeTraitee.getStatut().name(),
-                        "typeSinistre", demandeTraitee.getTypeSinistre().getDescription(),
-                        "conforme", demandeTraitee.isConformite(),
-                        "estimationCout", demandeTraitee.getEstimationCout() != null ? 
-                            demandeTraitee.getEstimationCout() : 0.0,
-                        "commentaires", demandeTraitee.getCommentairesEstimation() != null ? 
-                            demandeTraitee.getCommentairesEstimation() : "",
-                        "raisonRejet", demandeTraitee.getRaisonNonConformite() != null ? 
-                            demandeTraitee.getRaisonNonConformite() : ""
-                    );
-                    
+                    Map<String, Object> response = new java.util.HashMap<>();
+                    response.put("success", true);
+                    response.put("demandeId", demandeTraitee.getId());
+                    response.put("statut", demandeTraitee.getStatut().name());
+                    response.put("typeSinistre", demandeTraitee.getTypeSinistre().getDescription());
+                    response.put("conforme", demandeTraitee.isConformite());
+                    response.put("scoreConformite", demandeTraitee.getScoreConformite());
+                    response.put("estimationCout", demandeTraitee.getEstimationCout() != null ?
+                        demandeTraitee.getEstimationCout() : 0.0);
+                    response.put("commentaires", demandeTraitee.getCommentairesEstimation() != null ?
+                        demandeTraitee.getCommentairesEstimation() : "");
+                    response.put("raisonRejet", demandeTraitee.getRaisonNonConformite() != null ?
+                        demandeTraitee.getRaisonNonConformite() : "");
+                    response.put("validationHumaineRequise", demandeTraitee.isNecessiteValidationHumaine());
+                    response.put("raisonValidationHumaine", demandeTraitee.getRaisonValidationHumaine() != null ?
+                        demandeTraitee.getRaisonValidationHumaine() : "");
+                    response.put("anomaliesDetectees", demandeTraitee.getAnomaliesDetectees());
+                    response.put("metadata", demandeTraitee.getMetadata());
+                    response.put("auditLogs", demandeTraitee.getAuditLogs());
+
                     return ResponseEntity.ok(response);
                 })
                 .exceptionally(throwable -> {

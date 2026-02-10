@@ -22,6 +22,13 @@ public class AgentRouteur {
     public SinistreType classifierTypeSinistre(DemandeTraitement demande) {
         try {
             logger.info(() -> "Agent Routeur: Classification du type de sinistre pour la demande " + demande.getId());
+            demande.addAuditLog("Agent Routeur: Début de classification");
+
+            // Étape 1: Extraction et normalisation des métadonnées
+            extraireMetadonnees(demande);
+
+            // Étape 2: Détection des anomalies
+            detecterAnomalies(demande);
 
             String typesDisponibles = Arrays.stream(SinistreType.values())
                 .map(type -> "- " + type.name() + ": " + type.getDescription())
@@ -33,6 +40,7 @@ public class AgentRouteur {
                 
                 Email du client: "%s"
                 Contenu de la demande: "%s"
+                Métadonnées extraites: %s
                 
                 Types de sinistres disponibles:
                 %s
@@ -47,6 +55,7 @@ public class AgentRouteur {
                 """.formatted(
                     demande.getEmailClient(),
                     demande.getContenuDemande(),
+                    demande.getMetadata().toString(),
                     typesDisponibles
                 );
 
@@ -56,7 +65,9 @@ public class AgentRouteur {
             SinistreType typeClassifie = extraireTypeSinistre(reponse);
             
             demande.setTypeSinistre(typeClassifie);
-            
+            demande.setStatut(DemandeTraitement.StatutTraitement.CLASSIFIE);
+            demande.addAuditLog("Type classifié: " + typeClassifie.getDescription());
+
             logger.info(() -> String.format("Type classifié: %s (%s)", 
                 typeClassifie.name(), typeClassifie.getDescription()));
             
@@ -64,9 +75,135 @@ public class AgentRouteur {
 
         } catch (Exception e) {
             logger.severe("Erreur lors de la classification: " + e.getMessage());
+            demande.addAuditLog("Erreur classification: " + e.getMessage());
             // Par défaut, classer comme "AUTRES" en cas d'erreur
             demande.setTypeSinistre(SinistreType.AUTRES);
             return SinistreType.AUTRES;
+        }
+    }
+
+    /**
+     * Extrait et normalise les métadonnées clés de la demande
+     */
+    private void extraireMetadonnees(DemandeTraitement demande) {
+        try {
+            String prompt = """
+                Extrayez et normalisez les métadonnées de cette demande de sinistre:
+                
+                Email: "%s"
+                Contenu: "%s"
+                
+                Identifiez et extrayez au format JSON:
+                - nom du client (si mentionné)
+                - date de l'incident (si mentionné)
+                - montant estimé par le client (si mentionné)
+                - localisation (si mentionné)
+                - nombre de pièces jointes mentionnées
+                - mots-clés principaux (liste de 3-5 mots)
+                
+                Répondez uniquement avec les informations trouvées dans le format:
+                NOM: [nom ou N/A]
+                DATE_INCIDENT: [date ou N/A]
+                MONTANT_ESTIME: [montant ou N/A]
+                LOCALISATION: [lieu ou N/A]
+                PIECES_JOINTES: [nombre ou 0]
+                MOTS_CLES: [mot1, mot2, mot3]
+                """.formatted(
+                    demande.getEmailClient(),
+                    demande.getContenuDemande()
+                );
+
+            String reponse = chatModel.generate(prompt);
+
+            // Parser la réponse et ajouter aux métadonnées
+            parseMetadata(reponse, demande);
+
+            demande.addAuditLog("Métadonnées extraites: " + demande.getMetadata().size() + " champs");
+
+        } catch (Exception e) {
+            logger.warning("Erreur extraction métadonnées: " + e.getMessage());
+            demande.addAnomalie("Échec extraction métadonnées");
+        }
+    }
+
+    private void parseMetadata(String reponse, DemandeTraitement demande) {
+        for (String line : reponse.split("\n")) {
+            if (line.contains(":")) {
+                String[] parts = line.split(":", 2);
+                String key = parts[0].trim();
+                String value = parts[1].trim();
+                if (!value.equalsIgnoreCase("N/A") && !value.isEmpty()) {
+                    demande.addMetadata(key, value);
+                }
+            }
+        }
+    }
+
+    /**
+     * Détecte les anomalies ou données manquantes dans la demande
+     */
+    private void detecterAnomalies(DemandeTraitement demande) {
+        // Vérification de l'email
+        if (demande.getEmailClient() == null || demande.getEmailClient().trim().isEmpty()) {
+            demande.addAnomalie("Email client manquant");
+        } else if (!demande.getEmailClient().matches("^[A-Za-z0-9+_.-]+@(.+)$")) {
+            demande.addAnomalie("Format email invalide");
+        }
+
+        // Vérification du contenu
+        if (demande.getContenuDemande() == null || demande.getContenuDemande().trim().length() < 20) {
+            demande.addAnomalie("Description du sinistre insuffisante (minimum 20 caractères)");
+        }
+
+        // Vérification des pièces jointes
+        if (demande.getPhotosUrls() == null || demande.getPhotosUrls().isEmpty()) {
+            demande.addAnomalie("Aucune pièce jointe fournie");
+        }
+
+        // Analyse sémantique des incohérences
+        try {
+            String prompt = """
+                Analysez cette demande pour détecter des incohérences ou informations manquantes critiques:
+                
+                Contenu: "%s"
+                
+                Vérifiez:
+                - Cohérence temporelle (dates contradictoires)
+                - Informations essentielles manquantes pour ce type de sinistre
+                - Contradictions dans la description
+                - Gravité disproportionnée par rapport aux détails
+                
+                Listez uniquement les anomalies graves trouvées, une par ligne.
+                Si aucune anomalie, répondez: AUCUNE
+                """.formatted(demande.getContenuDemande());
+
+            String reponse = chatModel.generate(prompt);
+
+            if (!reponse.trim().equalsIgnoreCase("AUCUNE")) {
+                for (String anomalie : reponse.split("\n")) {
+                    if (!anomalie.trim().isEmpty()) {
+                        demande.addAnomalie(anomalie.trim());
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.warning("Erreur détection anomalies sémantiques: " + e.getMessage());
+        }
+
+        // Si anomalies critiques, marquer pour validation humaine
+        if (!demande.getAnomaliesDetectees().isEmpty()) {
+            demande.addAuditLog("Anomalies détectées: " + demande.getAnomaliesDetectees().size());
+
+            // Décision si validation humaine nécessaire
+            if (demande.getAnomaliesDetectees().size() >= 2 ||
+                demande.getAnomaliesDetectees().stream()
+                    .anyMatch(a -> a.toLowerCase().contains("critique") ||
+                                   a.toLowerCase().contains("manquant") ||
+                                   a.toLowerCase().contains("contradiction"))) {
+                demande.setNecessiteValidationHumaine(true);
+                demande.setRaisonValidationHumaine("Anomalies critiques détectées: " +
+                    String.join(", ", demande.getAnomaliesDetectees()));
+            }
         }
     }
 
