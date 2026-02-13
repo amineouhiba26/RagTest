@@ -1,12 +1,13 @@
-# 🤖 AI-Powered Insurance Claim Processing System
+# 🤖 Système Multi-Agents d'Assurance - Orchestration de Workflows Agentiques
 
-A sophisticated multi-agent AI system built with **Spring Boot**, **LangChain4j**, **Spring AI**, and **Ollama** that automates insurance claim processing using RAG (Retrieval-Augmented Generation) and the **Orchestrator-Workers pattern**.
+Système d'orchestration de workflows d'assurance développé avec **Spring AI** et **LangChain4j RAG**, conforme aux spécifications du cahier des charges du 10 février 2026.
 
 [![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.3.5-6DB33F?style=for-the-badge&logo=spring-boot)](https://spring.io/projects/spring-boot)
 [![LangChain4j](https://img.shields.io/badge/LangChain4j-0.34.0-FF6B6B?style=for-the-badge)](https://docs.langchain4j.dev/)
 [![Spring AI](https://img.shields.io/badge/Spring_AI-1.1.1-6DB33F?style=for-the-badge)](https://spring.io/projects/spring-ai)
 [![Ollama](https://img.shields.io/badge/Ollama-Latest-000000?style=for-the-badge&logo=ollama)](https://ollama.com/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16+-316192?style=for-the-badge&logo=postgresql)](https://www.postgresql.org/)
+[![Java](https://img.shields.io/badge/Java-21-ED8B00?style=for-the-badge&logo=java)](https://openjdk.java.net/)
 
 ---
 
@@ -41,8 +42,8 @@ A sophisticated multi-agent AI system built with **Spring Boot**, **LangChain4j*
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                     REST API Endpoints                           │
-│   /api/agents/* | /rag/* | /documents/* | /langchain4j/*       │
+│                     REST API Endpoints                          │
+│ /api/sinistres/* | /api/validation/* | /api/rag/*              │
 └─────────────────────────┬───────────────────────────────────────┘
                           │
                           ▼
@@ -134,11 +135,9 @@ Wait for the message: `Started DemoApplication in X.XXX seconds`
 ### 4. Load Sample Insurance Documents
 
 ```bash
-# Ingest PDF to Spring AI vector store
-curl -X POST "http://localhost:8080/documents/vector/insurance"
-
-# Ingest PDF to LangChain4j vector store  
-curl -X POST "http://localhost:8080/langchain4j/ingest"
+# Ingest a PDF into the Spring AI vector store via the unified RAG API
+curl -u admin:admin123 -X POST "http://localhost:8080/api/rag/ingest" \
+  -F "file=@/path/to/insurance-contract.pdf"
 ```
 
 ---
@@ -290,38 +289,17 @@ List<Document> similar = vectorStore.similaritySearch(
 
 ## 🌐 API Reference
 
-### Multi-Agent Endpoints
+### Sinistre & Orchestration Endpoints
 
-#### System Status
+#### Submit Claim
 ```http
-GET /api/agents/status
-```
-**Response**:
-```json
-{
-  "service": "Multi-Agents Orchestrator",
-  "status": "Operational", 
-  "agents": ["Routeur", "Validateur", "Estimateur"],
-  "patterns": "Orchestrator-Workers",
-  "capabilities": [
-    "Automatic claim classification",
-    "RAG-based compliance validation", 
-    "Multimodal cost estimation",
-    "Detailed reporting",
-    "Asynchronous processing"
-  ]
-}
-```
-
-#### Process Insurance Claim
-```http
-POST /api/agents/traiter-sinistre
+POST /api/sinistres/soumettre
 Content-Type: application/json
 
 {
-  "email": "client@example.com",
-  "description": "Car accident on highway A7, front collision with airbag deployment",
-  "photos": ["front_damage.jpg", "airbag_deployed.jpg"]
+  "emailClient": "client@example.com",
+  "contenuDemande": "Car accident on highway A7, front collision with airbag deployment",
+  "photosUrls": ["front_damage.jpg", "airbag_deployed.jpg"]
 }
 ```
 
@@ -329,48 +307,29 @@ Content-Type: application/json
 ```json
 {
   "success": true,
-  "demandeId": "uuid-here",
-  "statut": "ESTIME",
-  "typeSinistre": "Accident automobile", 
-  "conforme": true,
-  "estimationCout": 4250.00,
-  "commentaires": "Complete damage assessment with airbag replacement"
+  "message": "Sinistre soumis avec succès. Traitement en cours.",
+  "data": "b446d51f-f2d4-46a1-a3d7-3d7cbba6b041"
 }
 ```
 
-#### Express Processing
+#### Get Claim Status
 ```http
-POST /api/agents/traiter-express
+GET /api/sinistres/{id}/statut
 ```
-Simplified workflow for urgent claims.
 
-#### Generate Report
+#### Get Audit History
 ```http
-POST /api/agents/generer-rapport/{claimId}
+GET /api/sinistres/{id}/audit
 ```
-Detailed claim processing report.
 
 ### RAG Endpoints
 
-#### Spring AI RAG
 ```http
-# Ingest document
-POST /documents/vector/insurance
+# Ingest document (ADMIN only)
+POST /api/rag/ingest
 
-# Ask question
-GET /rag/ask?question=What is the deductible for auto insurance?
-```
-
-#### LangChain4j RAG  
-```http  
-# Ingest document
-POST /langchain4j/ingest
-
-# Ask question
-GET /langchain4j/ask?question=What are the coverage limits?
-
-# Simple chat
-GET /langchain4j/chat?message=Hello
+# Semantic search in ingested contracts (GESTIONNAIRE, ADMIN)
+POST /api/rag/search
 ```
 
 ---
@@ -432,37 +391,36 @@ services:
 
 ### Test Auto Claim Processing
 ```bash
-curl -X POST "http://localhost:8080/api/agents/traiter-sinistre" \
+curl -u client:client123 -X POST "http://localhost:8080/api/sinistres/soumettre" \
   -H "Content-Type: application/json" \
   -d '{
-    "email": "test@example.com",
-    "description": "Rear-end collision at traffic light. Bumper damage and trunk deformation.",
-    "photos": ["rear_damage.jpg", "bumper_close.jpg"]
+    "emailClient": "test@example.com",
+    "contenuDemande": "Rear-end collision at traffic light. Bumper damage and trunk deformation.",
+    "photosUrls": ["rear_damage.jpg", "bumper_close.jpg"]
   }'
 ```
 
 ### Test Water Damage Claim  
 ```bash
-curl -X POST "http://localhost:8080/api/agents/traiter-sinistre" \
+curl -u client:client123 -X POST "http://localhost:8080/api/sinistres/soumettre" \
   -H "Content-Type: application/json" \
   -d '{
-    "email": "homeowner@example.com", 
-    "description": "Kitchen flooding from burst pipe. Damaged flooring and cabinets.",
-    "photos": ["flooded_kitchen.jpg", "water_damage.jpg"]
+    "emailClient": "homeowner@example.com", 
+    "contenuDemande": "Kitchen flooding from burst pipe. Damaged flooring and cabinets.",
+    "photosUrls": ["flooded_kitchen.jpg", "water_damage.jpg"]
   }'
 ```
 
 ### Test RAG System
 ```bash
-# Upload insurance document
-curl -X POST "http://localhost:8080/documents/vector/insurance"
+# Upload insurance document to the unified RAG API
+curl -u admin:admin123 -X POST "http://localhost:8080/api/rag/ingest" \
+  -F "file=@/path/to/insurance-contract.pdf"
 
-# Ask about coverage
-curl -X GET "http://localhost:8080/rag/ask?question=What is covered under comprehensive auto insurance?"
-
-# Test LangChain4j
-curl -X POST "http://localhost:8080/langchain4j/ingest" 
-curl -X GET "http://localhost:8080/langchain4j/ask?question=What are the exclusions for theft coverage?"
+# Ask about coverage using semantic search
+curl -u gestionnaire:gestionnaire123 -X POST "http://localhost:8080/api/rag/search" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"What is covered under comprehensive auto insurance?"}'
 ```
 
 ---
@@ -649,8 +607,8 @@ ollama pull nomic-embed-text:latest
 # Check application logs
 tail -f logs/application.log
 
-# Test individual agent endpoints
-curl -X GET "http://localhost:8080/api/agents/status"
+# Test main business API
+curl -u client:client123 "http://localhost:8080/api/sinistres/{id}/statut"
 ```
 
 ### Performance Tuning

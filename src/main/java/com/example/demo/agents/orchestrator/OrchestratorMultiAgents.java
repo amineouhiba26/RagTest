@@ -1,12 +1,15 @@
 package com.example.demo.agents.orchestrator;
 
-import com.example.demo.agents.model.DemandeTraitement;
-import com.example.demo.agents.model.SinistreType;
+import com.example.demo.model.DemandeTraitement;
 import com.example.demo.agents.service.AgentEstimateur;
 import com.example.demo.agents.service.AgentRouteur;
 import com.example.demo.agents.service.AgentValidateur;
+import com.example.demo.agents.service.ConfidenceScoreService;
+import com.example.demo.service.AuditService;
+import com.example.demo.service.HumanValidationService;
 import org.springframework.stereotype.Service;
 
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -20,14 +23,23 @@ public class OrchestratorMultiAgents {
     private final AgentRouteur agentRouteur;
     private final AgentValidateur agentValidateur;
     private final AgentEstimateur agentEstimateur;
+    private final ConfidenceScoreService confidenceScoreService;
+    private final HumanValidationService humanValidationService;
+    private final AuditService auditService;
     private final ExecutorService executorService;
 
     public OrchestratorMultiAgents(AgentRouteur agentRouteur, 
                                   AgentValidateur agentValidateur,
-                                  AgentEstimateur agentEstimateur) {
+                                  AgentEstimateur agentEstimateur,
+                                  ConfidenceScoreService confidenceScoreService,
+                                  HumanValidationService humanValidationService,
+                                  AuditService auditService) {
         this.agentRouteur = agentRouteur;
         this.agentValidateur = agentValidateur;
         this.agentEstimateur = agentEstimateur;
+        this.confidenceScoreService = confidenceScoreService;
+        this.humanValidationService = humanValidationService;
+        this.auditService = auditService;
         this.executorService = Executors.newFixedThreadPool(5);
     }
 
@@ -105,25 +117,31 @@ public class OrchestratorMultiAgents {
             // Étape 4: Agrégation finale et décision
             .thenApply(d -> {
                 logger.info("Phase 4: Agrégation des résultats et décision finale");
-                d.addAuditLog("Phase 4: Agrégation finale");
+                d.addAuditLog("Phase 4: Calcul du score de confiance global");
 
-                // Calcul de métriques globales
-                d.addMetadata("workflow_complete", true);
-                d.addMetadata("nombre_anomalies", d.getAnomaliesDetectees().size());
-                d.addMetadata("logs_count", d.getAuditLogs().size());
+                // Utilisation du service de score de confiance (BF9)
+                double scoreGlobal = confidenceScoreService.calculerScoreConfiance(d);
+                
+                // Audit final du workflow
+                auditService.enregistrerEvenement(
+                    d.getId(),
+                    AuditService.TypeEvenement.MODIFICATION,
+                    "SYSTEM",
+                    "Fin du workflow multi-agents",
+                    Map.of(
+                        "statut_final", d.getStatut().toString(),
+                        "score_global", scoreGlobal,
+                        "validation_humaine", d.isNecessiteValidationHumaine()
+                    )
+                );
 
-                // Détermination automatique de la validation humaine si pas déjà définie
-                if (!d.isNecessiteValidationHumaine()) {
-                    boolean requiresHumanValidation = determinerValidationHumaine(d);
-                    if (requiresHumanValidation) {
-                        d.setNecessiteValidationHumaine(true);
-                        d.setRaisonValidationHumaine("Décision automatique basée sur l'analyse globale");
-                        d.setStatut(DemandeTraitement.StatutTraitement.EN_ATTENTE_VALIDATION_HUMAINE);
-                    }
+                // Soumission automatique à la validation humaine si nécessaire (BF10)
+                if (d.isNecessiteValidationHumaine()) {
+                    humanValidationService.soumettreValidation(d, d.getRaisonValidationHumaine());
                 }
 
                 logger.info(() -> String.format("Traitement terminé - Statut: %s, Score: %.2f, Validation humaine: %s",
-                    d.getStatut(), d.getScoreConformite(), d.isNecessiteValidationHumaine()));
+                    d.getStatut(), scoreGlobal, d.isNecessiteValidationHumaine()));
 
                 return d;
             })
@@ -136,35 +154,6 @@ public class OrchestratorMultiAgents {
                 demande.addAuditLog("Erreur fatale: " + throwable.getMessage());
                 return demande;
             });
-    }
-
-    /**
-     * Détermine si une intervention humaine est nécessaire basée sur plusieurs critères
-     */
-    private boolean determinerValidationHumaine(DemandeTraitement demande) {
-        // Critères pour validation humaine:
-        // 1. Score de conformité faible (< 80)
-        if (demande.getScoreConformite() < 80 && demande.getScoreConformite() > 0) {
-            return true;
-        }
-
-        // 2. Estimation élevée (> 10000€)
-        if (demande.getEstimationCout() != null && demande.getEstimationCout() > 10000) {
-            return true;
-        }
-
-        // 3. Nombreuses anomalies (>= 3)
-        if (demande.getAnomaliesDetectees().size() >= 3) {
-            return true;
-        }
-
-        // 4. Type de sinistre complexe
-        if (demande.getTypeSinistre() == SinistreType.CATASTROPHE_NATURELLE ||
-            demande.getTypeSinistre() == SinistreType.RESPONSABILITE_CIVILE) {
-            return true;
-        }
-
-        return false;
     }
 
     public CompletableFuture<String> genererRapportComplet(DemandeTraitement demande) {

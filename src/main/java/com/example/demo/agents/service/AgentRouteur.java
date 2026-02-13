@@ -1,7 +1,7 @@
 package com.example.demo.agents.service;
 
-import com.example.demo.agents.model.DemandeTraitement;
-import com.example.demo.agents.model.SinistreType;
+import com.example.demo.model.DemandeTraitement;
+import com.example.demo.model.SinistreType;
 import dev.langchain4j.model.chat.ChatLanguageModel;
 import org.springframework.stereotype.Service;
 

@@ -1,4 +1,4 @@
-package com.example.demo.agents.model;
+package com.example.demo.model;
 
 public enum SinistreType {
     ACCIDENT_AUTOMOBILE("Accident automobile"),

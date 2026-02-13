@@ -1,0 +1,203 @@
+Cahier des Charges
+Orchestration de Workflows d’Assurance "Agentiques"
+Avec Spring AI et LangChain4jRAG
+10 février 2026
+Table des matières
+1 Contexte et Problématique 2
+2 Objectifs du Projet 2
+3 Périmètre du Système 2
+4 Acteurs du Système 3
+5 Besoins Fonctionnels 3
+6 Architecture Agentique du Système 4
+6.1 6.2 6.3 6.4 Agent Routeur . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 4
+Agent Validateur Contractuel . . . . . . . . . . . . . . . . . . . . . . . . . 4
+Agent Estimateur . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 5
+Agent Orchestrateur . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 5
+7 Stack Technique 5
+7.1 7.2 Technologies principales . . . . . . . . . . . . . . . . . . . . . . . . . . . . 5
+Infrastructure et Qualité . . . . . . . . . . . . . . . . . . . . . . . . . . . . 6
+8 Besoins Non-Fonctionnels 6
+9 Organisation du Projet et Phases 6
+10 Critères d’Acceptation 7
+1
+1 Contexte et Problématique
+La gestion des sinistres constitue un processus critique dans le domaine de l’assu-
+rance. Elle repose sur l’analyse de documents hétérogènes, l’interprétation des garanties
+contractuelles et une prise de décision encadrée par des règles métier strictes.
+Ce processus implique notamment :
+— l’analyse de contrats, déclarations et pièces justificatives,
+— la vérification des garanties et exclusions,
+— l’estimation des montants d’indemnisation,
+— des validations humaines obligatoires.
+Ces opérations sont aujourd’hui majoritairement manuelles, coûteuses en temps et
+sujettes à des erreurs humaines. L’émergence des systèmes d’intelligence artificielle multi-
+agents permet d’automatiser une partie du raisonnement métier tout en conservant un
+contrôle humain.
+Le présent projet vise à concevoir un module intelligent plug-and-play, intégrable
+dans une plateforme d’assurance existante (ex. InsureFlow).
+2 Objectifs du Projet
+Les objectifs principaux sont :
+— Automatiser l’analyse documentaire liée aux sinistres.
+— Mettre en place une orchestration d’agents IA spécialisés.
+— Garantir la traçabilité, la sécurité et la conformité métier.
+— Intégrer un mécanisme Human-in-the-Loop basé sur un score de confiance.
+— Concevoir une architecture modulaire et découplée, où chaque composant est indé-
+pendant, testable et facilement remplaçable.
+3 Périmètre du Système
+Le système couvre :
+— l’ingestion et l’analyse documentaire,
+— la classification et l’évaluation des sinistres,
+— l’orchestration d’agents intelligents,
+— l’exposition d’API REST sécurisées.
+Sont exclus du périmètre :
+— la gestion des paiements,
+— les systèmes CRM,
+— les interfaces front-end avancées.
+2
+4 Acteurs du Système
+— Assuré / Client : déclare un sinistre.
+— Agents IA : analysent, raisonnent et proposent des décisions.
+— Gestionnaire humain : valide ou corrige les décisions.
+— Système tiers (InsureFlow) : consomme les API exposées.
+5 Besoins Fonctionnels
+Les besoins fonctionnels décrivent les fonctionnalités essentielles que le système doit
+offrir pour répondre aux objectifs métiers et utilisateurs. Chaque besoin inclut son objectif
+et son contexte d’usage.
+• BF1 — Ingestion documentaire : Le système doit permettre l’upload et la
+conversion de documents PDF/DOCX liés aux sinistres. L’objectif est de centraliser
+toutes les informations pertinentes et de les rendre exploitables par les agents IA,
+tout en gérant des fichiers volumineux et hétérogènes.
+• BF2 — Extraction et structuration : Extraction des informations clés (nom
+du client, dates, montants, garanties) et structuration en métadonnées normalisées.
+Cela permet aux agents IA de travailler sur des données uniformisées pour améliorer
+la précision des analyses.
+• BF3—Générationd’embeddings:Transformationdutexteenvecteursséman-
+tiques exploitables par la base RAG. Cette étape facilite la recherche intelligente et
+l’association d’informations similaires, indépendamment du format ou du vocabu-
+laire.
+• BF4 — Recherche sémantique : Interrogation de la base vectorielle pour ré-
+pondre à des questions sur les contrats et sinistres. L’objectif est de retrouver ra-
+pidement des informations pertinentes, même dans de grandes collections de docu-
+ments.
+• BF5 — Classification des sinistres : Détermination automatique du type de
+sinistre (ex. incendie, vol, dégât des eaux) à partir des données fournies. Cette
+classification permet de déclencher le workflow adéquat et d’assigner le bon agent
+IA.
+• BF6 — Vérification contractuelle : L’agent IA doit comparer les demandes
+avec les conditions générales du contrat et vérifier la couverture, les exclusions et
+plafonds applicables. Cela garantit la conformité réglementaire et réduit les erreurs
+humaines.
+• BF7 — Estimation du coût : Calcul d’une estimation préliminaire de l’indemni-
+sation à partir des documents et médias fournis (photos, justificatifs). L’agent doit
+fournir une estimation justifiée et explicable.
+3
+• BF8 — Orchestration des agents : Pilotage du workflow multi-agents, incluant
+la séquence des actions, l’agrégation des résultats et le déclenchement conditionnel
+d’autres agents ou de la validation humaine.
+• BF9 — Gestion de la confiance : Calcul d’un score de confiance pour chaque
+décision automatisée. Les cas incertains sont automatiquement escaladés vers un
+gestionnaire humain.
+• BF10 — Validation humaine : Permet à un employé de vérifier, corriger ou
+valider les décisions proposées par les agents IA, avec un historique complet des
+modifications effectuées.
+• BF11 — Audit et traçabilité : Journalisation complète des actions des agents
+et des humains, avec horodatage, métadonnées, scores de confiance et justification,
+pour assurer conformité et contrôle interne.
+• BF12 — API externe : Exposition d’API REST sécurisées pour permettre l’in-
+tégration avec des systèmes tiers comme InsureFlow et faciliter la consultation des
+dossiers et l’interaction avec le workflow.
+6 Architecture Agentique du Système
+Le système adopte une architecture multi-agents modulaire. Chaque agent est auto-
+nome, testable indépendamment et orchestré via un moteur central. Les agents inter-
+agissent entre eux, avec les bases de données internes, la base vectorielle (RAG), et avec
+la validation humaine si nécessaire.
+6.1 Agent Routeur
+Rôle : Analyse initiale de la demande et pré-classification des sinistres.
+Fonctionnalités détaillées :
+— Recevoir la demande du client (email, formulaire, texte libre).
+— Identifier le type de sinistre (ex. incendie, vol, dégât des eaux) en utilisant des règles
+métier et des modèles ML/NLP.
+— Extraire et normaliser les métadonnées clés (nom, date, montant, localisation, pièces
+jointes).
+— Préparer un objet JSON standardisé pour les agents suivants.
+— Détecter les anomalies ou données manquantes et déclencher une alerte ou une
+demande de complément.
+6.2 Agent Validateur Contractuel
+Rôle : Vérifier la conformité du sinistre avec le contrat d’assurance.
+Fonctionnalités détaillées :
+4
+— Interroger la base vectorielle (RAG) pour retrouver les passages contractuels perti-
+nents.
+— Comparer les informations de la demande avec les garanties, exclusions et plafonds
+de la police.
+— Calculer un score indiquant le degré de conformité.
+— Générer un rapport explicatif, justifiant chaque vérification et résultat.
+— Déclencher une validation humaine pour les cas douteux ou complexes.
+6.3 Agent Estimateur
+Rôle : Fournir une estimation financière préliminaire du sinistre.
+Fonctionnalités détaillées :
+— Analyser toutes les informations disponibles (documents, photos, formulaires, mé-
+tadonnées).
+— Évaluer les dommages et leur gravité.
+— Fournir une estimation chiffrée de l’indemnisation.
+— Fournir des justifications détaillées pour chaque estimation.
+— Marquer les estimations incertaines pour révision humaine.
+6.4 Agent Orchestrateur
+Rôle : Gérer le workflow complet et coordonner les autres agents.
+Fonctionnalités détaillées :
+— Définir et piloter la séquence d’exécution des agents (Routeur → Validateur →
+Estimateur).
+— Agréger les résultats et scores des différents agents.
+— Déterminer automatiquement si une intervention humaine est nécessaire.
+— Gérer les états du dossier (réception, classification, validation, estimation, décision
+finale).
+— Fournir des logs et traces détaillées pour auditabilité et contrôle interne.
+7 Stack Technique
+7.1 Technologies principales
+— Java 21
+— Spring Boot 3.x
+— Spring AI
+5
+— LangChain4j
+— PostgreSQL + pgvector (ou Milvus)
+— Ollama (LLM local)
+7.2 Infrastructure et Qualité
+— Docker & Docker Compose
+— Spring Security + Keycloak
+— Resilience4j
+— Testcontainers
+— Observabilité (logs structurés, métriques)
+8 Besoins Non-Fonctionnels
+Les besoins non-fonctionnels décrivent les qualités et contraintes que le système doit
+respecter, indépendamment de ses fonctionnalités.
+• BNF1 — Performance : Traitement efficace des sinistres pour assurer une expé-
+rience utilisateur fluide.
+• BNF2 — Scalabilité : Capacité à gérer un grand nombre de sinistres simultané-
+ment, sans dégradation notable.
+• BNF3 — Disponibilité : Services critiques toujours accessibles, avec mécanismes
+de reprise et tolérance aux pannes.
+• BNF4 — Sécurité : Protection des données et des API via OAuth2/JWT et
+gestion des rôles. Assurer confidentialité, intégrité et authenticité.
+• BNF5 — Testabilité : Chaque agent et composant doit être testable indépen-
+damment, avec des simulations fiables pour les dépendances.
+• BNF6 — Maintenabilité : Architecture modulaire et découplée, composants in-
+dépendants et facilement remplaçables.
+• BNF7 — Auditabilité : Historique complet des actions et décisions, accessible
+pour audits internes ou externes.
+9 Organisation du Projet et Phases
+Le projet est structuré en phases :
+— Phase 0 — Fondation technique
+— Phase 1 — Système RAG
+— Phase 2 — Agents IA
+6
+— Phase 3 — Orchestration
+— Phase 4 — Human-in-the-Loop
+— Phase 5 — Sécurité, audit et résilience
+10 Critères d’Acceptation
+Le système est considéré conforme si :
+• les documents sont analysés correctement,
+• les décisions IA sont explicables et traçables,
+• la validation humaine est fonctionnelle,
+• les API sont sécurisées et documentées,
+• le déploiement via Docker Compose est opérationnel.
+7

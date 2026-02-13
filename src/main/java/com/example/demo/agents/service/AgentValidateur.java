@@ -1,7 +1,7 @@
 package com.example.demo.agents.service;
 
-import com.example.demo.agents.model.DemandeTraitement;
-import com.example.demo.service.LangChain4jRagService;
+import com.example.demo.model.DemandeTraitement;
+import com.example.demo.service.RagService;
 import dev.langchain4j.model.chat.ChatLanguageModel;
 import org.springframework.stereotype.Service;
 
@@ -13,9 +13,9 @@ public class AgentValidateur {
     private static final Logger logger = Logger.getLogger(AgentValidateur.class.getName());
     
     private final ChatLanguageModel chatModel;
-    private final LangChain4jRagService ragService;
+    private final RagService ragService;
 
-    public AgentValidateur(ChatLanguageModel chatModel, LangChain4jRagService ragService) {
+    public AgentValidateur(ChatLanguageModel chatModel, RagService ragService) {
         this.chatModel = chatModel;
         this.ragService = ragService;
     }
@@ -32,7 +32,7 @@ public class AgentValidateur {
                 demande.getTypeSinistre().getDescription()
             );
 
-            String conditionsPolice = ragService.askQuestion(questionPolice);
+            String conditionsPolice = ragService.searchContext(questionPolice);
             demande.addAuditLog("Conditions contractuelles récupérées via RAG");
 
             // Analyse détaillée de conformité avec scoring
